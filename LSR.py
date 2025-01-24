@@ -31,25 +31,8 @@ thread_count = 900
 packet_size = 9
 ADMIN_FILE = 'admin_data.json'
 last_attack_times = {}
-COOLDOWN_MINUTES = 0
 
-def check_cooldown(user_id: int) -> tuple[bool, int]:
-    """
-    Check if a user is in cooldown period
-    Returns (bool, remaining_seconds)
-    """
-    if user_id not in last_attack_times:
-        return False, 0
-        
-    last_attack = last_attack_times[user_id]
-    current_time = datetime.now()
-    time_diff = current_time - last_attack
-    cooldown_seconds = COOLDOWN_MINUTES * 60
-    
-    if time_diff.total_seconds() < cooldown_seconds:
-        remaining = cooldown_seconds - time_diff.total_seconds()
-        return True, int(remaining)
-    return False, 0
+
 
 def update_last_attack_time(user_id: int):
     """Update the last attack time for a user"""
