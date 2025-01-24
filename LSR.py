@@ -1,8 +1,7 @@
 import time
 import logging
 import json
-from threading 
-import Thread
+from threading import Thread
 import telebot
 import asyncio
 import random
