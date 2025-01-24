@@ -1,7 +1,8 @@
 import time
 import logging
 import json
-from threading import Thread
+from threading 
+import Thread
 import telebot
 import asyncio
 import random
@@ -25,14 +26,31 @@ KEY_PRICES = {
     'day': 80,   # 80 Rs per day
     'week': 500  # 500 Rs per week
 }
-ADMIN_IDS = [1162836160, 6532790304]
+ADMIN_IDS = [1162836160]
 BOT_TOKEN = "6184444779:AAFKlL1xfXVjFYiHyj2R4_rRp4lcI4W62Hc"
 thread_count = 900
 packet_size = 9
 ADMIN_FILE = 'admin_data.json'
 last_attack_times = {}
+COOLDOWN_MINUTES = 60
 
-
+def check_cooldown(user_id: int) -> tuple[bool, int]:
+    """
+    Check if a user is in cooldown period
+    Returns (bool, remaining_seconds)
+    """
+    if user_id not in last_attack_times:
+        return False, 0
+        
+    last_attack = last_attack_times[user_id]
+    current_time = datetime.now()
+    time_diff = current_time - last_attack
+    cooldown_seconds = COOLDOWN_MINUTES * 60
+    
+    if time_diff.total_seconds() < cooldown_seconds:
+        remaining = cooldown_seconds - time_diff.total_seconds()
+        return True, int(remaining)
+    return False, 0
 
 def update_last_attack_time(user_id: int):
     """Update the last attack time for a user"""
@@ -552,356 +570,4 @@ def remove_admin_command(message):
                     bot.send_message(
                         int(admin_to_remove),
                         "*Your admin privileges have been revoked.*",
-                        parse_mode='Markdown'
-                    )
-                except:
-                    pass
-            else:
-                bot.reply_to(message, "*Failed to remove admin. Please try again.*", parse_mode='Markdown')
-        else:
-            bot.reply_to(message, "*This user is not an admin.*", parse_mode='Markdown')
-
-    except Exception as e:
-        logger.error(f"Error in remove_admin_command: {e}")
-        bot.reply_to(message, "*An error occurred while removing admin.*", parse_mode='Markdown')
-
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_id = message.from_user.id
-    username = message.from_user.username or "N/A"
-
-    # Create keyboard markup
-    markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    my_account_button = KeyboardButton("𝐌𝐲 𝐀𝐜𝐜𝐨𝐮𝐧𝐭🏦")
-    attack_button = KeyboardButton("🚀 𝐀𝐭𝐭𝐚𝐜𝐤")
-    markup.add(my_account_button, attack_button)
-
-    if is_super_admin(user_id):
-        welcome_message = (
-            f"Welcome, Super Admin! Developed By ᚛ @GOD_OFF_LSR ᚜\n\n"
-            f"Admin Commands:\n"
-            f"/addadmin - Add new admin\n"
-            f"/removeadmin - Remove admin\n"
-            f"/genkey - Generate new key\n"
-            f"/remove - Remove user\n"
-            f"/users - List all users\n"
-            f"/thread - Set thread count\n"
-            f"/packet - Set packet size\n"
-        )
-    elif is_admin(user_id):
-        balance = get_admin_balance(user_id)
-        welcome_message = (
-            f"Welcome, Admin! Developed By ᚛ @GOD_OFF_LSR ᚜\n\n"
-            f"Your Balance: {balance}\n\n"
-            f"Admin Commands:\n"
-            f"/genkey - Generate new key\n"
-            f"/remove - Remove user\n"
-            f"/balance - Check your balance"
-        )
-    else:
-        welcome_message = (
-            f"Welcome, {username}! Developed By ᚛ @GOD_OFF_LSR ᚜\n\n"
-            f"Please redeem a key to access bot functionalities.\n"
-            f"Available Commands:\n"
-            f"/redeem - To redeem key\n"
-            f"/Attack - Start an attack\n\n"
-            f"Contact ᚛ @GOD_OFF_LSR ᚜ for new keys"
-        )
-
-    bot.send_message(message.chat.id, welcome_message, reply_markup=markup)
-
-@bot.message_handler(commands=['genkey'])
-def genkey_command(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    if not is_admin(user_id):
-        bot.send_message(chat_id, "*You are not authorized to generate keys.\nContact Owner: ᚛ @GOD_OFF_LSR ᚜*", parse_mode='Markdown')
-        return
-
-    cmd_parts = message.text.split()
-    if len(cmd_parts) != 3:
-        bot.send_message(chat_id, (
-            "*Usage: /genkey <amount> <unit>*\n\n"
-            "Available units and prices:\n"
-            "- hour/hours (50₹ per hour)\n"
-            "- day/days (180₹ per day)\n"
-            "- week/weeks (700₹ per week)"
-        ), parse_mode='Markdown')
-        return
     
-    try:
-        amount = int(cmd_parts[1])
-        time_unit = cmd_parts[2].lower()
-        
-        # Normalize time unit
-        base_unit = time_unit.rstrip('s')  # Remove trailing 's' if present
-        if base_unit == 'week':
-            duration = timedelta(weeks=amount)
-            price_unit = 'week'
-        elif base_unit == 'day':
-            duration = timedelta(days=amount)
-            price_unit = 'day'
-        elif base_unit == 'hour':
-            duration = timedelta(hours=amount)
-            price_unit = 'hour'
-        else:
-            bot.send_message(chat_id, "*Invalid time unit. Use 'hours', 'days', or 'weeks'.*", parse_mode='Markdown')
-            return
-        
-        # Calculate price
-        price = calculate_key_price(amount, price_unit)
-        
-        # Check and update balance
-        if not update_admin_balance(str(user_id), price):
-            current_balance = get_admin_balance(user_id)
-            bot.send_message(chat_id, 
-                f"*Insufficient balance!*\n\n"
-                f"Required: {price}₹\n"
-                f"Your balance: {current_balance}₹", 
-                parse_mode='Markdown')
-            return
-        
-        # Generate and save key
-        global keys
-        keys = load_keys()
-        key = generate_key()
-        keys[key] = duration
-        save_keys(keys)
-        
-        # Send success message
-        new_balance = get_admin_balance(user_id)
-        success_msg = (
-            f"*Key generated successfully!*\n\n"
-            f"Key: `{key}`\n"
-            f"Duration: {amount} {time_unit}\n"
-            f"Price: {price}₹\n"
-            f"Remaining balance: {new_balance}₹\n\n"
-            f"Copy this key and use:\n/redeem {key}"
-        )
-        
-        bot.send_message(chat_id, success_msg, parse_mode='Markdown')
-        
-        # Log the transaction
-        logging.info(f"Admin {user_id} generated key worth {price}₹ for {amount} {time_unit}")
-    
-    except ValueError:
-        bot.send_message(chat_id, "*Invalid amount. Please enter a number.*", parse_mode='Markdown')
-        return
-    except Exception as e:
-        logging.error(f"Error in genkey_command: {e}")
-        bot.send_message(chat_id, "*An error occurred while generating the key.*", parse_mode='Markdown')
-
-@bot.message_handler(commands=['redeem'])
-def redeem_command(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    cmd_parts = message.text.split()
-
-    if len(cmd_parts) != 2:
-        bot.send_message(chat_id, "*Usage: /redeem <key>*", parse_mode='Markdown')
-        return
-
-    key = cmd_parts[1]
-    
-    # Load the current keys
-    global keys
-    keys = load_keys()
-    
-    # Check if the key is valid and not already redeemed
-    if key in keys and key not in redeemed_keys:
-        duration = keys[key]  # This is already a timedelta
-        expiration_time = datetime.now() + duration
-
-        users = load_users()
-        # Save the user info to users.txt
-        found_user = next((user for user in users if user['user_id'] == user_id), None)
-        if not found_user:
-            new_user = {
-                'user_id': user_id,
-                'username': f"@{message.from_user.username}" if message.from_user.username else "Unknown",
-                'valid_until': expiration_time.isoformat().replace('T', ' '),
-                'current_date': datetime.now().isoformat().replace('T', ' '),
-                'plan': 'Plan Premium'
-            }
-            users.append(new_user)
-        else:
-            found_user['valid_until'] = expiration_time.isoformat().replace('T', ' ')
-            found_user['current_date'] = datetime.now().isoformat().replace('T', ' ')
-
-        # Mark the key as redeemed
-        redeemed_keys.add(key)
-        # Remove the used key from the keys file
-        del keys[key]
-        save_keys(keys)
-        save_users(users)
-
-        bot.send_message(chat_id, "*Key redeemed successfully!*", parse_mode='Markdown')
-    else:
-        if key in redeemed_keys:
-            bot.send_message(chat_id, "*This key has already been redeemed!*", parse_mode='Markdown')
-        else:
-            bot.send_message(chat_id, "*Invalid key!*", parse_mode='Markdown')
-
-@bot.message_handler(commands=['remove'])
-def remove_user_command(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    if not is_admin(user_id):
-        bot.send_message(chat_id, "*You are not authorized to remove users.\nContact Owner:- ᚛ @GOD_OFF_LSR ᚜*", parse_mode='Markdown')
-        return
-
-    cmd_parts = message.text.split()
-    if len(cmd_parts) != 2:
-        bot.send_message(chat_id, "*Usage: /remove <user_id>*", parse_mode='Markdown')
-        return
-
-    target_user_id = int(cmd_parts[1])
-    users = load_users()
-    users = [user for user in users if user['user_id'] != target_user_id]
-    save_users(users)
-
-    bot.send_message(chat_id, f"User {target_user_id} has been removed.")
-
-@bot.message_handler(commands=['users'])
-def list_users_command(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    # Only super admins can see all users
-    if not is_super_admin(user_id):
-        bot.send_message(chat_id, "*You are not authorized to view all users.*", parse_mode='Markdown')
-        return
-
-    users = load_users()
-    valid_users = [user for user in users if datetime.now() < datetime.fromisoformat(user['valid_until'])]
-
-    if valid_users:
-        user_list = "\n".join(f"ID: {user['user_id']} \nUsername: {user.get('username', 'N/A')}" for user in valid_users)
-        bot.send_message(chat_id, f"Registered users:\n{user_list}")
-    else:
-        bot.send_message(chat_id, "No users have valid keys.")
-
-@bot.message_handler(func=lambda message: message.text == "🚀 𝐀𝐭𝐭𝐚𝐜𝐤")
-def attack_button_handler(message):
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-
-    # Check cooldown first, regardless of admin status
-    in_cooldown, remaining = check_cooldown(user_id)
-    if in_cooldown:
-        minutes = remaining // 60
-        seconds = remaining % 60
-        bot.send_message(
-            chat_id,
-            f"*⏰ Cooldown in progress! Please wait {minutes}m {seconds}s before starting another attack.*",
-            parse_mode='Markdown'
-        )
-        return
-
-    # Rest of the handler remains the same...
-    if is_admin(user_id):
-        try:
-            bot.send_message(chat_id, "*𝐏𝐥𝐞𝐚𝐬𝐞 𝐏𝐫𝐨𝐯𝐢𝐝𝐞 ✅:\n<𝐈𝐏> <𝐏𝐎𝐑𝐓> <𝐓𝐈𝐌𝐄>.*", parse_mode='Markdown')
-            bot.register_next_step_handler(message, process_attack_command, chat_id)
-            return
-        except Exception as e:
-            logging.error(f"Error in attack button: {e}")
-            return
-
-    users = load_users()
-    found_user = next((user for user in users if user['user_id'] == user_id), None)
-
-    if not found_user:
-        bot.send_message(chat_id, "*𝐘𝐨𝐮 𝐚𝐫𝐞 𝐧𝐨𝐭 𝐫𝐞𝐠𝐢𝐬𝐭𝐞𝐫𝐞𝐝. 𝐏𝐥𝐞𝐚𝐬𝐞 𝐫𝐞𝐝𝐞𝐞𝐦 𝐀 𝐤𝐞𝐲 𝐓𝐨 𝐎𝐰𝐧𝐞𝐫:- ᚛ @GOD_OFF_LSR ᚜*", parse_mode='Markdown')
-        return
-
-    valid_until = datetime.fromisoformat(found_user['valid_until'])
-    if datetime.now() > valid_until:
-        bot.send_message(chat_id, "*𝐘𝐨𝐮𝐫 𝐤𝐞𝐲 𝐡𝐚𝐬 𝐞𝐱𝐩𝐢𝐫𝐞𝐝. 𝐏𝐥𝐞𝐚𝐬𝐞 𝐫𝐞𝐝𝐞𝐞𝐦 𝐀 𝐤𝐞𝐲 𝐓𝐨 𝐎𝐰𝐧𝐞𝐫:- ᚛ @GOD_OFF_LSR ᚜.*", parse_mode='Markdown')
-        return
-
-    try:
-        bot.send_message(chat_id, "*𝐏𝐥𝐞𝐚𝐬𝐞 𝐏𝐫𝐨𝐯𝐢𝐝𝐞 ✅:\n<𝐈𝐏> <𝐏𝐎𝐑𝐓> <𝐓𝐈𝐌𝐄>.*", parse_mode='Markdown')
-        bot.register_next_step_handler(message, process_attack_command, chat_id)
-    except Exception as e:
-        logging.error(f"Error in attack button: {e}")
-
-@bot.message_handler(func=lambda message: message.text == "𝐌𝐲 𝐀𝐜𝐜𝐨𝐮𝐧𝐭🏦")
-def my_account(message):
-    user_id = message.from_user.id
-    users = load_users()
-
-    # Find the user in the list
-    found_user = next((user for user in users if user['user_id'] == user_id), None)
-
-    if is_super_admin(user_id):
-            account_info = (
-                "👑---------------𝐀𝐝𝐦𝐢𝐧 𝐃𝐚𝐬𝐡𝐛𝐨𝐚𝐫𝐝---------------👑       \n\n"
-                "🌟  𝗔𝗰𝗰𝗼𝘂𝗻𝘁 𝗗𝗲𝘁𝗮𝗶𝗹𝘀               \n"
-                "ꜱᴛᴀᴛᴜꜱ: Super Admin\n"
-                "ᴀᴄᴄᴇꜱꜱ ʟᴇᴠᴇʟ: Unlimited\n"
-                "ᴘʀɪᴠɪʟᴇɢᴇꜱ: Full System Control\n\n"
-                "💼  𝗣𝗲𝗿𝗺𝗶𝘀𝘀𝗶𝗼𝗻𝘀 \n"
-                "• Generate Keys\n"
-                "• Manage Admins\n"
-                "• System Configuration\n"
-                "• Unlimited Balance"
-            )
-    
-    elif is_admin(user_id):
-            # For regular admins
-            balance = get_admin_balance(user_id)
-            account_info = (
-                "🛡️---------------𝐀𝐝𝐦𝐢𝐧 𝐏𝐫𝐨𝐟𝐢𝐥𝐞---------------🛡️n\n"
-                f"💰  𝗕𝗮𝗹𝗮𝗻𝗰𝗲: {balance}₹\n\n"
-                "🌐  𝗔𝗰𝗰𝗼𝘂𝗻𝘁 𝗦𝘁𝗮𝘁𝘂𝘀:\n"
-                "• ʀᴏʟᴇ: Admin\n"
-                "• ᴀᴄᴄᴇꜱꜱ: Restricted\n"
-                "• ᴘʀɪᴠɪʟᴇɢᴇꜱ:\n"
-                "  - Generate Keys\n"
-                "  - User Management\n"
-                "  - Balance Tracking"
-            )
-    elif found_user:
-        valid_until = datetime.fromisoformat(found_user.get('valid_until', 'N/A')).strftime('%Y-%m-%d %H:%M:%S')
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        if datetime.now() > datetime.fromisoformat(found_user['valid_until']):
-            account_info = (
-                "𝐘𝐨𝐮𝐫 𝐤𝐞𝐲 𝐡𝐚𝐬 𝐞𝐱𝐩𝐢𝐫𝐞𝐝. 𝐏𝐥𝐞𝐚𝐬𝐞 𝐫𝐞𝐝𝐞𝐞𝐦 𝐚 𝐧𝐞𝐰 𝐤𝐞𝐲.\n"
-                "Contact ᚛ @GOD_OFF_LSR ᚜ for assistance."
-            )
-        else:
-            account_info = (
-                f"𝕐𝕠𝕦𝕣 𝔸𝕔𝕔𝕠𝕦𝕟𝕥 𝕀𝕟𝕗𝕠𝕣𝕞𝕒𝕥𝕚𝕠𝕟:\n\n"
-                f"ᴜꜱᴇʀɴᴀᴍᴇ: {found_user.get('username', 'N/A')}\n"
-                f"ᴠᴀʟɪᴅ ᴜɴᴛɪʟ: {valid_until}\n"
-                f"ᴘʟᴀɴ: {found_user.get('plan', 'N/A')}\n"
-                f"ᴄᴜʀʀᴇɴᴛ ᴛɪᴍᴇ: {current_time}"
-            )
-    else:
-        account_info = "𝐏𝐥𝐞𝐚𝐬𝐞 𝐫𝐞𝐝𝐞𝐞𝐦 𝐀 𝐤𝐞𝐲 𝐓𝐨 𝐎𝐰𝐧𝐞𝐫:- ᚛ @GOD_OFF_LSR ᚜."
-
-    bot.send_message(message.chat.id, account_info)
-
-if __name__ == '__main__':
-    print("Bot is running...")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Start the asyncio thread
-    Thread(target=start_asyncio_thread).start()
-    
-    # Start the user expiry check thread
-    Thread(target=check_user_expiry).start()
-
-    while True:
-        try:
-            bot.polling(timeout=60)
-        except ApiTelegramException as e:
-            time.sleep(5)
-        except Exception as e:
-            time.sleep(5)
